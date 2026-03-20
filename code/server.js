@@ -1,187 +1,105 @@
 /**
- * ╔══════════════════════════════════════════╗
- *  Pulse Chat — server.js
- *  Node.js + Express + Socket.io backend
- * ╚══════════════════════════════════════════╝
- *
- * Run:
- *   npm install
- *   node server.js
- *
- * Then open http://localhost:3000 in your browser.
+ * Pulse Chat — server.js
+ * Run: npm install  then  node server.js
+ * Open: http://localhost:3000
  */
-
-const express   = require('express');
-const http      = require('http');
+const express    = require('express');
+const http       = require('http');
 const { Server } = require('socket.io');
-const path      = require('path');
+const path       = require('path');
 
-/* ─── App Setup ─────────────────────────────── */
 const app    = express();
 const server = http.createServer(app);
-const io     = new Server(server, {
-  cors: { origin: '*' }          // Allow all origins for local dev
-});
+const io     = new Server(server);
 
 const PORT = process.env.PORT || 3000;
 
-/* ─── Serve Static Frontend ──────────────────── */
+// Serve the public folder
 app.use(express.static(path.join(__dirname, 'public')));
 
-/* ─── In-Memory State ────────────────────────── */
-// Map of socket.id → { username, room, color }
-const users = new Map();
-
-// Available chat rooms
+// ─── State ───────────────────────────────────
+const users = new Map(); // socket.id → { username, room, color }
 const ROOMS = ['General', 'Tech', 'Random'];
 
-// Assign a consistent color per user (cycles through palette)
-const USER_COLORS = [
-  '#64b5f6', '#81c784', '#ffb74d', '#f06292',
-  '#ba68c8', '#4dd0e1', '#aed581', '#ff8a65',
-];
-let colorIndex = 0;
-function nextColor() {
-  const c = USER_COLORS[colorIndex % USER_COLORS.length];
-  colorIndex++;
-  return c;
-}
+const COLORS = ['#60b4ff','#56e39f','#ffd166','#ff6b9d','#c77dff','#4cc9f0','#f4a261','#a8dadc'];
+let colorIdx = 0;
+const nextColor = () => { const c = COLORS[colorIdx % COLORS.length]; colorIdx++; return c; };
 
-/* ─── Helper: room user list ─────────────────── */
-function getRoomUsers(room) {
+function roomUsers(room) {
   const list = [];
-  users.forEach(u => {
-    if (u.room === room) list.push({ username: u.username, color: u.color });
-  });
+  users.forEach(u => { if(u.room === room) list.push({ username: u.username, color: u.color }); });
   return list;
 }
 
-/* ─── Socket.io Connection Handler ──────────── */
-io.on('connection', (socket) => {
-  console.log(`[+] Socket connected: ${socket.id}`);
+// ─── Socket.io ───────────────────────────────
+io.on('connection', socket => {
+  console.log(`[+] ${socket.id} connected`);
 
-  /* ── 1. User Joins a Room ─── */
+  // 1. Join
   socket.on('join', ({ username, room }) => {
+    if(!username || !username.trim()) return;
+    if(!ROOMS.includes(room)) room = 'General';
+    username = username.trim().slice(0, 24);
 
-    // Validate
-    if (!username || !username.trim()) return;
-    if (!ROOMS.includes(room)) room = 'General';
-
-    username = username.trim().slice(0, 24); // max 24 chars
-
-    // Store user info
-    users.set(socket.id, {
-      username,
-      room,
-      color: nextColor(),
-    });
-
-    // Join Socket.io room
+    const user = { username, room, color: nextColor() };
+    users.set(socket.id, user);
     socket.join(room);
 
-    const user = users.get(socket.id);
-
+    socket.emit('joined', { username, room, color: user.color, rooms: ROOMS });
+    socket.to(room).emit('notification', { type: 'joined', msg: `${username} joined the room ✨` });
+    io.to(room).emit('userList', roomUsers(room));
     console.log(`  → ${username} joined [${room}]`);
-
-    // Confirm join to the joining client
-    socket.emit('joined', {
-      username : user.username,
-      room     : user.room,
-      color    : user.color,
-      rooms    : ROOMS,
-    });
-
-    // Notify everyone else in the room
-    socket.to(room).emit('notification', {
-      type    : 'joined',
-      message : `${username} joined the room`,
-    });
-
-    // Send updated user list to everyone in room
-    io.to(room).emit('userList', getRoomUsers(room));
   });
 
-  /* ── 2. Chat Message ─── */
-  socket.on('message', (text) => {
+  // 2. Message
+  socket.on('message', text => {
     const user = users.get(socket.id);
-    if (!user) return;
-
-    // Sanitise & reject empty messages
+    if(!user) return;
     const clean = String(text).trim().slice(0, 1000);
-    if (!clean) return;
-
-    const payload = {
-      id       : `${socket.id}-${Date.now()}`,
-      username : user.username,
-      color    : user.color,
-      text     : clean,
-      time     : new Date().toISOString(),
-    };
-
-    // Broadcast to everyone in the room (including sender)
-    io.to(user.room).emit('message', payload);
-  });
-
-  /* ── 3. Typing Indicator ─── */
-  socket.on('typing', (isTyping) => {
-    const user = users.get(socket.id);
-    if (!user) return;
-
-    // Broadcast to everyone ELSE in the room
-    socket.to(user.room).emit('typing', {
-      username : user.username,
-      isTyping,
+    if(!clean) return;
+    io.to(user.room).emit('message', {
+      id: `${socket.id}-${Date.now()}`,
+      username: user.username,
+      color:    user.color,
+      text:     clean,
+      time:     new Date().toISOString()
     });
   });
 
-  /* ── 4. Switch Room ─── */
-  socket.on('switchRoom', (newRoom) => {
+  // 3. Typing
+  socket.on('typing', isTyping => {
     const user = users.get(socket.id);
-    if (!user || !ROOMS.includes(newRoom) || newRoom === user.room) return;
+    if(user) socket.to(user.room).emit('typing', { username: user.username, isTyping });
+  });
 
-    const oldRoom = user.room;
+  // 4. Switch room
+  socket.on('switchRoom', newRoom => {
+    const user = users.get(socket.id);
+    if(!user || !ROOMS.includes(newRoom) || newRoom === user.room) return;
 
-    // Leave old room
-    socket.leave(oldRoom);
-    socket.to(oldRoom).emit('notification', {
-      type    : 'left',
-      message : `${user.username} left the room`,
-    });
-    io.to(oldRoom).emit('userList', getRoomUsers(oldRoom));
+    const old = user.room;
+    socket.leave(old);
+    socket.to(old).emit('notification', { type: 'left', msg: `${user.username} left the room` });
+    io.to(old).emit('userList', roomUsers(old));
 
-    // Join new room
     user.room = newRoom;
     users.set(socket.id, user);
     socket.join(newRoom);
-
-    socket.to(newRoom).emit('notification', {
-      type    : 'joined',
-      message : `${user.username} joined the room`,
-    });
-    io.to(newRoom).emit('userList', getRoomUsers(newRoom));
-
-    // Tell client the switch succeeded
+    socket.to(newRoom).emit('notification', { type: 'joined', msg: `${user.username} joined ✨` });
+    io.to(newRoom).emit('userList', roomUsers(newRoom));
     socket.emit('roomSwitched', { room: newRoom });
   });
 
-  /* ── 5. Disconnect ─── */
+  // 5. Disconnect
   socket.on('disconnect', () => {
     const user = users.get(socket.id);
-    if (user) {
-      console.log(`[-] ${user.username} disconnected from [${user.room}]`);
-
-      socket.to(user.room).emit('notification', {
-        type    : 'left',
-        message : `${user.username} left the chat`,
-      });
-
+    if(user) {
+      socket.to(user.room).emit('notification', { type: 'left', msg: `${user.username} left the chat` });
       users.delete(socket.id);
-      io.to(user.room).emit('userList', getRoomUsers(user.room));
+      io.to(user.room).emit('userList', roomUsers(user.room));
+      console.log(`[-] ${user.username} disconnected`);
     }
   });
 });
 
-/* ─── Start Server ───────────────────────────── */
-server.listen(PORT, () => {
-  console.log(`\n  ✦ Pulse Chat running at http://localhost:${PORT}\n`);
-});
+server.listen(PORT, () => console.log(`\n  ✦ Pulse Chat → http://localhost:${PORT}\n`));

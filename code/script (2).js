@@ -1,347 +1,245 @@
-/**
- * ╔══════════════════════════════════════════╗
- *  Pulse Chat — public/script.js
- *  Frontend Socket.io client logic
- * ╚══════════════════════════════════════════╝
- */
+/* ===== Pulse Chat — script.js =====
+   IMPORTANT: This ONLY works via Node.js.
+   Run: npm install && node server.js
+   Open: http://localhost:3000
+   ================================== */
 
-/* ─── DOM References ────────────────────── */
-const joinScreen    = document.getElementById('joinScreen');
-const chatApp       = document.getElementById('chatApp');
-const usernameInput = document.getElementById('usernameInput');
-const joinBtn       = document.getElementById('joinBtn');
-const joinError     = document.getElementById('joinError');
-const roomPills     = document.getElementById('roomPills');
+/* ── DOM ── */
+const joinScreen = document.getElementById('joinScreen');
+const chatApp    = document.getElementById('chatApp');
+const nameInput  = document.getElementById('nameInput');
+const joinBtn    = document.getElementById('joinBtn');
+const joinErr    = document.getElementById('joinErr');
+const roomBtns   = document.getElementById('roomBtns');
 
-const messages      = document.getElementById('messages');
-const messagesWrap  = document.getElementById('messagesWrap');
-const msgInput      = document.getElementById('msgInput');
-const sendBtn       = document.getElementById('sendBtn');
-const typingBar     = document.getElementById('typingBar');
+const msgs       = document.getElementById('msgs');
+const msgsWrap   = document.getElementById('msgsWrap');
+const msgInput   = document.getElementById('msgInput');
+const sendBtn    = document.getElementById('sendBtn');
+const typingBar  = document.getElementById('typingBar');
 
-const topbarRoom    = document.getElementById('topbarRoom');
-const topbarStatus  = document.getElementById('topbarStatus');
-const topbarAvatar  = document.getElementById('topbarAvatar');
-const roomList      = document.getElementById('roomList');
-const userList      = document.getElementById('userList');
-const onlineCount   = document.getElementById('onlineCount');
+const tbRoom     = document.getElementById('tbRoom');
+const tbStat     = document.getElementById('tbStat');
+const myAv       = document.getElementById('myAv');
+const roomList   = document.getElementById('roomList');
+const userList   = document.getElementById('userList');
+const onlineN    = document.getElementById('onlineN');
 
-const sidebar           = document.getElementById('sidebar');
-const menuBtn           = document.getElementById('menuBtn');
-const sidebarToggle     = document.getElementById('sidebarToggle');
+const sidebar    = document.getElementById('sidebar');
+const sbMask     = document.getElementById('sbMask');
+const menuBtn    = document.getElementById('menuBtn');
+const sbClose    = document.getElementById('sbClose');
 
-/* ─── State ─────────────────────────────── */
-let socket        = null;
-let myUsername    = '';
-let myColor       = '#7c6cfc';
-let myRoom        = 'General';
-let selectedRoom  = 'General';
+/* ── State ── */
+let socket       = null;
+let myName       = '';
+let myColor      = '#6c63ff';
+let myRoom       = 'General';
+let selRoom      = 'General';   // selected on join screen
+let isTyping     = false;
+let typingTimer  = null;
+const typingMap  = new Map();
 
-// Typing debounce
-let typingTimeout = null;
-let isTypingNow   = false;
-
-// Typing map: username → timeout id
-const typingUsers = new Map();
-
-/* ─── Sound Notification ─────────────────── */
-// Create a tiny "ping" using the Web Audio API (no file needed)
-function playPing() {
-  try {
-    const ctx  = new (window.AudioContext || window.webkitAudioContext)();
-    const osc  = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.frequency.setValueAtTime(880, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.15);
-    gain.gain.setValueAtTime(0.12, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.3);
-  } catch (_) { /* AudioContext blocked — silently skip */ }
-}
-
-/* ─── Sidebar (mobile) ───────────────────── */
-// Create overlay element
-const overlay = document.createElement('div');
-overlay.className = 'sidebar-overlay';
-document.body.appendChild(overlay);
-
-function openSidebar()  { sidebar.classList.add('open'); overlay.classList.add('show'); }
-function closeSidebar() { sidebar.classList.remove('open'); overlay.classList.remove('show'); }
-
-menuBtn.addEventListener('click', openSidebar);
-sidebarToggle.addEventListener('click', closeSidebar);
-overlay.addEventListener('click', closeSidebar);
-
-/* ─── Room Pill Selection (Join Screen) ───── */
-roomPills.addEventListener('click', e => {
-  const pill = e.target.closest('.room-pill');
-  if (!pill) return;
-  document.querySelectorAll('.room-pill').forEach(p => p.classList.remove('active'));
-  pill.classList.add('active');
-  selectedRoom = pill.dataset.room;
+/* ── Room pill selection on join screen ── */
+roomBtns.addEventListener('click', e => {
+  const btn = e.target.closest('.rb');
+  if(!btn) return;
+  document.querySelectorAll('.rb').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  selRoom = btn.dataset.room;
 });
 
-/* ─── Join Button ────────────────────────── */
-joinBtn.addEventListener('click', joinChat);
-usernameInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter') joinChat();
-});
+/* ── Sidebar ── */
+function openSB()  { sidebar.classList.add('open'); sbMask.classList.add('on'); }
+function closeSB() { sidebar.classList.remove('open'); sbMask.classList.remove('on'); }
+menuBtn.addEventListener('click', openSB);
+sbClose.addEventListener('click', closeSB);
+sbMask.addEventListener('click', closeSB);
 
-function joinChat() {
-  const name = usernameInput.value.trim();
-  if (!name) {
-    joinError.textContent = 'Please enter your name.';
-    usernameInput.focus();
-    return;
-  }
-  joinError.textContent = '';
+/* ── Join ── */
+joinBtn.addEventListener('click', doJoin);
+nameInput.addEventListener('keydown', e => { if(e.key === 'Enter') doJoin(); });
 
-  // Connect to Socket.io server
+function doJoin() {
+  const name = nameInput.value.trim();
+  if(!name) { joinErr.textContent = 'Please enter your name.'; nameInput.focus(); return; }
+  joinErr.textContent = '';
+  joinBtn.disabled = true;
+  joinBtn.querySelector('span') ? joinBtn.childNodes[0].textContent = 'Connecting…' : null;
+
   socket = io();
-  bindSocketEvents();
-
-  socket.emit('join', { username: name, room: selectedRoom });
+  bindSocket();
+  socket.emit('join', { username: name, room: selRoom });
 }
 
-/* ─── Socket Events ──────────────────────── */
-function bindSocketEvents() {
-
-  /* Connection confirmed */
+/* ── Socket ── */
+function bindSocket() {
   socket.on('connect', () => {
-    topbarStatus.textContent = 'Connected';
-    topbarStatus.classList.add('online');
+    tbStat.textContent = 'Connected';
+    tbStat.classList.add('online');
   });
-
   socket.on('disconnect', () => {
-    topbarStatus.textContent = 'Disconnected — reconnecting…';
-    topbarStatus.classList.remove('online');
+    tbStat.textContent = 'Reconnecting…';
+    tbStat.classList.remove('online');
   });
 
-  /* Server confirmed the join */
   socket.on('joined', ({ username, room, color, rooms }) => {
-    myUsername = username;
-    myRoom     = room;
-    myColor    = color;
+    myName  = username;
+    myRoom  = room;
+    myColor = color;
 
-    // Update UI
-    topbarAvatar.textContent       = username[0].toUpperCase();
-    topbarAvatar.style.background  = color;
-    topbarRoom.textContent         = room;
+    myAv.textContent      = username[0].toUpperCase();
+    myAv.style.background = color;
+    tbRoom.textContent    = `# ${room}`;
 
-    // Populate sidebar rooms
-    renderRoomList(rooms, room);
+    buildRoomList(rooms, room);
 
-    // Show chat screen
-    joinScreen.classList.add('hide');
+    /* switch screens */
+    joinScreen.classList.add('out');
     setTimeout(() => {
       joinScreen.style.display = 'none';
-      chatApp.classList.add('visible');
+      chatApp.classList.add('on');
       msgInput.focus();
-    }, 400);
+    }, 420);
   });
 
-  /* Incoming message */
-  socket.on('message', (msg) => {
-    const isOwn = msg.username === myUsername;
-    appendMessage(msg, isOwn);
-    if (!isOwn) playPing();
+  socket.on('message', m => {
+    addMsg(m, m.username === myName);
+    if(m.username !== myName) ping();
   });
 
-  /* Notification (joined/left) */
-  socket.on('notification', ({ type, message }) => {
-    appendNotification(message, type);
+  socket.on('notification', ({ type, msg }) => {
+    addNotif(msg, type);
   });
 
-  /* Typing indicator */
-  socket.on('typing', ({ username, isTyping }) => {
-    if (isTyping) {
-      typingUsers.set(username, true);
-    } else {
-      typingUsers.delete(username);
-    }
-    renderTyping();
+  socket.on('typing', ({ username, isTyping: t }) => {
+    if(t) typingMap.set(username, true); else typingMap.delete(username);
+    showTyping();
   });
 
-  /* User list update */
-  socket.on('userList', (users) => {
-    renderUserList(users);
-  });
+  socket.on('userList', users => renderUsers(users));
 
-  /* Room switched successfully */
   socket.on('roomSwitched', ({ room }) => {
     myRoom = room;
-    topbarRoom.textContent = room;
-    messages.innerHTML     = '';  // Clear messages when switching rooms
-    typingUsers.clear();
-    renderTyping();
-    appendNotification(`You joined #${room}`, 'joined');
-    updateActiveSidebarRoom(room);
+    tbRoom.textContent = `# ${room}`;
+    msgs.innerHTML = `<div class="welcome-chip">👋 You joined #${room}!</div>`;
+    typingMap.clear(); showTyping();
+    markActiveRoom(room);
   });
 }
 
-/* ─── Send Message ───────────────────────── */
-sendBtn.addEventListener('click', sendMessage);
+/* ── Send ── */
+sendBtn.addEventListener('click', send);
 msgInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
+  if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }
 });
 
-function sendMessage() {
-  if (!socket) return;
+function send() {
+  if(!socket) return;
   const text = msgInput.value.trim();
-  if (!text) return;
-
+  if(!text) return;
   socket.emit('message', text);
   msgInput.value = '';
-  msgInput.style.height = 'auto'; // reset textarea height
-
-  // Stop typing indicator
-  emitTyping(false);
-}
-
-/* ─── Typing Indicator (emit) ────────────── */
-msgInput.addEventListener('input', () => {
-  // Auto-resize textarea
   msgInput.style.height = 'auto';
-  msgInput.style.height = Math.min(msgInput.scrollHeight, 120) + 'px';
+  stopTyping();
+}
 
-  if (!socket) return;
-
-  if (!isTypingNow) {
-    isTypingNow = true;
-    emitTyping(true);
-  }
-
-  clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(() => {
-    isTypingNow = false;
-    emitTyping(false);
-  }, 1500);
+/* ── Typing emit ── */
+msgInput.addEventListener('input', () => {
+  msgInput.style.height = 'auto';
+  msgInput.style.height = Math.min(msgInput.scrollHeight, 108) + 'px';
+  if(!socket) return;
+  if(!isTyping){ isTyping=true; socket.emit('typing',true); }
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(stopTyping, 1600);
 });
+function stopTyping(){ if(isTyping){ isTyping=false; if(socket) socket.emit('typing',false); } }
 
-function emitTyping(state) {
-  if (socket) socket.emit('typing', state);
+/* ── Typing display ── */
+function showTyping() {
+  if(!typingMap.size){ typingBar.innerHTML=''; return; }
+  const names = [...typingMap.keys()];
+  const label = names.length===1 ? `${names[0]} is typing`
+              : names.length===2 ? `${names[0]} and ${names[1]} are typing`
+              : 'Several people are typing';
+  typingBar.innerHTML = `<span>${label}</span><span class="t-dots"><span></span><span></span><span></span></span>`;
 }
 
-/* ─── Render: Typing indicator ───────────── */
-function renderTyping() {
-  if (typingUsers.size === 0) {
-    typingBar.innerHTML = '';
-    return;
-  }
-  const names = [...typingUsers.keys()];
-  const label = names.length === 1
-    ? `${names[0]} is typing`
-    : names.length === 2
-    ? `${names[0]} and ${names[1]} are typing`
-    : 'Several people are typing';
-
-  typingBar.innerHTML = `
-    <span>${label}</span>
-    <span class="typing-dots">
-      <span></span><span></span><span></span>
-    </span>
-  `;
+/* ── Render message ── */
+function addMsg(m, own) {
+  const row  = document.createElement('div');
+  row.className = `msg-row ${own ? 'own' : 'other'}`;
+  const init = m.username[0].toUpperCase();
+  const time = new Date(m.time).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+  const av   = own ? '' : `<div class="m-av" style="background:${m.color}">${init}</div>`;
+  row.innerHTML = `
+    ${av}
+    <div class="m-body">
+      <div class="m-meta">
+        ${!own ? `<span class="m-name" style="color:${m.color}">${esc(m.username)}</span>` : ''}
+        <span class="m-time">${time}</span>
+      </div>
+      <div class="bubble">${esc(m.text)}</div>
+    </div>`;
+  msgs.appendChild(row);
+  scrollDown();
 }
 
-/* ─── Render: Message bubble ─────────────── */
-function appendMessage(msg, isOwn) {
-  const row = document.createElement('div');
-  row.className = `msg-row ${isOwn ? 'own' : 'other'}`;
-
-  const time = formatTime(new Date(msg.time));
-  const initial = msg.username[0].toUpperCase();
-
-  if (!isOwn) {
-    // Avatar (only for others)
-    const avatar = document.createElement('div');
-    avatar.className = 'msg-avatar';
-    avatar.style.background = msg.color;
-    avatar.textContent = initial;
-    row.appendChild(avatar);
-  }
-
-  const body = document.createElement('div');
-  body.className = 'msg-body';
-
-  body.innerHTML = `
-    <div class="msg-meta">
-      ${!isOwn ? `<span class="msg-username" style="color:${msg.color}">${escapeHtml(msg.username)}</span>` : ''}
-      <span class="msg-time">${time}</span>
-    </div>
-    <div class="msg-bubble">${escapeHtml(msg.text)}</div>
-  `;
-
-  row.appendChild(body);
-  messages.appendChild(row);
-  scrollToBottom();
-}
-
-/* ─── Render: Notification ───────────────── */
-function appendNotification(text, type = '') {
+/* ── Render notification ── */
+function addNotif(text, type='') {
   const el = document.createElement('div');
-  el.className = `msg-notification ${type}`;
+  el.className = `notif ${type}`;
   el.textContent = text;
-  messages.appendChild(el);
-  scrollToBottom();
+  msgs.appendChild(el);
+  scrollDown();
 }
 
-/* ─── Render: Room List (sidebar) ────────── */
-function renderRoomList(rooms, activeRoom) {
+/* ── Room list ── */
+function buildRoomList(rooms, active) {
   roomList.innerHTML = '';
-  rooms.forEach(room => {
-    const item = document.createElement('div');
-    item.className = `room-item ${room === activeRoom ? 'active' : ''}`;
-    item.textContent = room;
-    item.addEventListener('click', () => {
-      if (room === myRoom) { closeSidebar(); return; }
-      socket.emit('switchRoom', room);
-      closeSidebar();
+  rooms.forEach(r => {
+    const el = document.createElement('div');
+    el.className = `sb-room ${r===active?'active':''}`;
+    el.innerHTML = `<span style="color:var(--muted)">#</span> ${r}`;
+    el.addEventListener('click', () => {
+      if(r===myRoom){ closeSB(); return; }
+      socket.emit('switchRoom', r);
+      closeSB();
     });
-    roomList.appendChild(item);
+    roomList.appendChild(el);
   });
 }
 
-function updateActiveSidebarRoom(room) {
-  document.querySelectorAll('.room-item').forEach(el => {
-    el.classList.toggle('active', el.textContent === room);
+function markActiveRoom(room) {
+  document.querySelectorAll('.sb-room').forEach(el => {
+    el.classList.toggle('active', el.textContent.trim() === room);
   });
 }
 
-/* ─── Render: User List (sidebar) ─────────── */
-function renderUserList(users) {
-  onlineCount.textContent = users.length;
+/* ── User list ── */
+function renderUsers(users) {
+  onlineN.textContent = users.length;
   userList.innerHTML = '';
   users.forEach(u => {
-    const item = document.createElement('div');
-    item.className = 'user-item';
-    item.innerHTML = `
-      <div class="user-avatar" style="background:${u.color}">${u.username[0].toUpperCase()}</div>
-      <span>${escapeHtml(u.username)}</span>
-      <div class="user-dot"></div>
-    `;
-    userList.appendChild(item);
+    const el = document.createElement('div');
+    el.className = 'sb-user';
+    el.innerHTML = `<div class="u-av" style="background:${u.color}">${u.username[0].toUpperCase()}</div><span>${esc(u.username)}</span><div class="u-dot"></div>`;
+    userList.appendChild(el);
   });
 }
 
-/* ─── Helpers ────────────────────────────── */
-function scrollToBottom() {
-  messagesWrap.scrollTo({ top: messagesWrap.scrollHeight, behavior: 'smooth' });
-}
-
-function formatTime(date) {
-  return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-}
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+/* ── Helpers ── */
+function scrollDown() { msgsWrap.scrollTo({ top: msgsWrap.scrollHeight, behavior:'smooth' }); }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function ping() {
+  try {
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    const o=ctx.createOscillator(), g=ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.frequency.setValueAtTime(880,ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(440,ctx.currentTime+.12);
+    g.gain.setValueAtTime(.09,ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.28);
+    o.start(); o.stop(ctx.currentTime+.28);
+  } catch(_){}
 }
