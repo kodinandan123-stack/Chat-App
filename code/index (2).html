@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Pulse Chat</title>
+  <link rel="stylesheet" href="style.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Fraunces:ital,wght@1,300;1,600&display=swap" rel="stylesheet"/>
+</head>
+<body>
+
+  <!-- ══════════════════════════════════ -->
+  <!--  JOIN SCREEN                        -->
+  <!-- ══════════════════════════════════ -->
+  <div class="join-screen" id="joinScreen">
+    <div class="join-card">
+      <div class="join-logo">
+        <span class="logo-pulse"></span>
+        <span class="logo-text">Pulse</span>
+      </div>
+      <p class="join-sub">Real-time chat. No fuss.</p>
+
+      <div class="join-form">
+        <div class="input-wrap">
+          <label>Your Name</label>
+          <input
+            type="text"
+            id="usernameInput"
+            placeholder="e.g. Alex"
+            maxlength="24"
+            autocomplete="off"
+          />
+        </div>
+        <div class="input-wrap">
+          <label>Room</label>
+          <div class="room-pills" id="roomPills">
+            <button class="room-pill active" data-room="General">General</button>
+            <button class="room-pill" data-room="Tech">Tech</button>
+            <button class="room-pill" data-room="Random">Random</button>
+          </div>
+        </div>
+        <button class="join-btn" id="joinBtn">Join Chat →</button>
+        <p class="join-error" id="joinError"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════ -->
+  <!--  CHAT APP                           -->
+  <!-- ══════════════════════════════════ -->
+  <div class="chat-app" id="chatApp">
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="s-logo">
+          <span class="logo-pulse sm"></span>
+          <span>Pulse</span>
+        </div>
+        <button class="sidebar-toggle" id="sidebarToggle" aria-label="Close sidebar">✕</button>
+      </div>
+
+      <!-- Rooms -->
+      <div class="sidebar-section">
+        <div class="sidebar-label">Rooms</div>
+        <div class="room-list" id="roomList">
+          <!-- filled by JS -->
+        </div>
+      </div>
+
+      <!-- Online Users -->
+      <div class="sidebar-section">
+        <div class="sidebar-label">Online <span class="online-count" id="onlineCount">0</span></div>
+        <div class="user-list" id="userList">
+          <!-- filled by JS -->
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Chat -->
+    <div class="chat-main">
+
+      <!-- Top Bar -->
+      <div class="chat-topbar">
+        <button class="menu-btn" id="menuBtn" aria-label="Open sidebar">☰</button>
+        <div class="topbar-info">
+          <div class="topbar-room" id="topbarRoom">General</div>
+          <div class="topbar-status" id="topbarStatus">Connecting…</div>
+        </div>
+        <div class="topbar-avatar" id="topbarAvatar">?</div>
+      </div>
+
+      <!-- Messages -->
+      <div class="messages-wrap" id="messagesWrap">
+        <div class="messages" id="messages">
+          <!-- messages injected here -->
+        </div>
+      </div>
+
+      <!-- Typing Indicator -->
+      <div class="typing-bar" id="typingBar"></div>
+
+      <!-- Input Area -->
+      <div class="input-area">
+        <textarea
+          id="msgInput"
+          placeholder="Type a message…"
+          maxlength="1000"
+          rows="1"
+        ></textarea>
+        <button class="send-btn" id="sendBtn" aria-label="Send">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Socket.io client (served by server) -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
