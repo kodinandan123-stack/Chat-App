@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Pulse Chat</title>
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+<!-- ══════════════════════════════════
+     JOIN SCREEN
+     ══════════════════════════════════ -->
+<div id="joinScreen">
+  <div class="jb jb1"></div>
+  <div class="jb jb2"></div>
+  <div class="jb jb3"></div>
+
+  <div class="join-card">
+    <div class="jlogo">
+      <div class="pm"><span></span></div>
+      <span class="pw">Pulse</span>
+    </div>
+    <p class="jsub">Real-time chat. Instant connection.</p>
+
+    <div class="jform">
+      <div class="jf">
+        <label>Your Name</label>
+        <input
+          type="text"
+          id="nameInput"
+          placeholder="e.g. Alex"
+          maxlength="24"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>
+
+      <div class="jf">
+        <label>Choose a Room</label>
+        <div class="rbwrap" id="roomBtns">
+          <button class="rb on" data-room="General"># General</button>
+          <button class="rb"    data-room="Tech">   # Tech   </button>
+          <button class="rb"    data-room="Random"> # Random </button>
+        </div>
+      </div>
+
+      <button class="jbtn" id="joinBtn">
+        <span id="joinLabel">Join Chat</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <line x1="5" y1="12" x2="19" y2="12"/>
+          <polyline points="12 5 19 12 12 19"/>
+        </svg>
+      </button>
+      <p class="jerr" id="joinErr"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     CHAT APP
+     ══════════════════════════════════ -->
+<div id="chatApp">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sbhd">
+      <div class="sblogo">
+        <div class="pm sm"><span></span></div>
+        <span class="pw sm">Pulse</span>
+      </div>
+      <button class="ibtn" id="sbClose">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <line x1="18" y1="6"  x2="6"  y2="18"/>
+          <line x1="6"  y1="6"  x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="sbsec">
+      <p class="sblbl">Rooms</p>
+      <div class="sbrooms" id="roomList"></div>
+    </div>
+
+    <div class="sbsec">
+      <p class="sblbl">Online <span class="onum" id="onum">0</span></p>
+      <div class="sbusers" id="userList"></div>
+    </div>
+  </aside>
+
+  <!-- Mobile overlay -->
+  <div id="sbMask"></div>
+
+  <!-- Main chat -->
+  <div class="cmain">
+
+    <!-- Topbar -->
+    <div class="topbar">
+      <button class="ibtn" id="menuBtn">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <line x1="3" y1="6"  x2="21" y2="6"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+      <div class="tbmid">
+        <span class="tbroom" id="tbRoom"># General</span>
+        <span class="tbstat" id="tbStat">Connecting…</span>
+      </div>
+      <div class="myav" id="myAv">?</div>
+    </div>
+
+    <!-- Messages -->
+    <div class="mwrap" id="mwrap">
+      <div class="msgs" id="msgs">
+        <div class="wchip">👋 Welcome — say hello to the room!</div>
+      </div>
+    </div>
+
+    <!-- Typing indicator -->
+    <div class="typbar" id="typBar"></div>
+
+    <!-- Input -->
+    <div class="inputrow">
+      <textarea
+        id="msgInput"
+        placeholder="Type a message…"
+        maxlength="1000"
+        rows="1"
+      ></textarea>
+      <button class="sendbtn" id="sendBtn">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<!-- Socket.io client — served automatically by Node.js -->
+<script src="/socket.io/socket.io.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
