@@ -517,3 +517,77 @@ input, textarea { font-family: var(--font); }
   .rbwrap       { flex-direction: column; }
   .rb           { text-align: center; }
 }
+
+
+/* =====================================================
+   CHANGE 1 — System error notification (joinError)
+===================================================== */
+.sysn.error {
+     color: var(--red);
+     border-color: rgba(248, 113, 113, 0.25);
+     background: rgba(248, 113, 113, 0.07);
+}
+
+/* =====================================================
+   CHANGE 2 — Character counter
+===================================================== */
+
+/* Wrap textarea + counter together */
+.inputwrap {
+     flex: 1;
+     position: relative;
+     display: flex;
+     flex-direction: column;
+}
+
+.inputwrap textarea {
+     flex: 1;
+     background: var(--s2);
+     border: 1.5px solid var(--bor);
+     border-radius: 22px;
+     padding: 10px 17px 24px; /* extra bottom padding for counter */
+  color: var(--text);
+     font-size: 14.5px;
+     resize: none;
+     outline: none;
+     line-height: 1.5;
+     max-height: 108px;
+     overflow-y: auto;
+     scrollbar-width: none;
+     transition: border-color var(--tr), box-shadow var(--tr);
+}
+.inputwrap textarea::placeholder { color: var(--muted); }
+.inputwrap textarea:focus {
+     border-color: var(--acc);
+     box-shadow: 0 0 0 3px var(--acc-glow);
+}
+
+.char-count {
+     position: absolute;
+     bottom: 7px;
+     right: 14px;
+     font-size: 10.5px;
+     color: var(--muted);
+     pointer-events: none;
+     transition: color 0.2s ease;
+     font-variant-numeric: tabular-nums;
+}
+.char-count.warn  { color: #f59e0b; }
+.char-count.limit { color: var(--red); font-weight: 700; }
+
+/* =====================================================
+   CHANGE 3 — Timestamp hidden by default, shown on
+               bubble hover
+===================================================== */
+.mtime {
+     font-size: 10.5px;
+     color: var(--muted);
+     opacity: 0;
+     transition: opacity 0.18s ease;
+     white-space: nowrap;
+     pointer-events: none;
+}
+
+.mbody:hover .mtime {
+     opacity: 1;
+}
