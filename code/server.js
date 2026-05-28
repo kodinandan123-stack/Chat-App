@@ -2,9 +2,9 @@
  * =====================================================
  * Pulse Chat — server.js
  * HOW TO RUN:
- * 1. npm install
- * 2. node server.js
- * 3. Open http://localhost:3000
+ *   1. npm install
+ *   2. node server.js
+ *   3. Open http://localhost:3000
  * =====================================================
  */
 
@@ -23,126 +23,151 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 /* ── Health-check endpoint ───────────────────────── */
 app.get('/health', (_req, res) => {
-  res.json({
-    status : 'ok',
-    uptime : process.uptime().toFixed(1) + 's',
-    users  : users.size,
-    rooms  : ROOMS
-  });
+    res.json({
+          status : 'ok',
+          uptime : process.uptime().toFixed(1) + 's',
+          users  : users.size,
+          rooms  : ROOMS
+    });
 });
 
 /* ── In-Memory State ────────────────────────────── */
-const users = new Map(); // socket.id -> { username, room, color }
-const ROOMS = ['General', 'Tech', 'Random'];
+const users  = new Map();          // socket.id -> { username, room, color }
+const ROOMS  = ['General', 'Tech', 'Random'];
 const COLORS = [
-  '#60b4ff', '#56e39f', '#ffd166',
-  '#ff6b9d', '#c77dff', '#4cc9f0',
-  '#f4a261', '#a8dadc'
-];
+    '#60b4ff', '#56e39f', '#ffd166',
+    '#ff6b9d', '#c77dff', '#4cc9f0',
+    '#f4a261', '#a8dadc'
+  ];
 let colorIdx = 0;
 const nextColor = () => { const c = COLORS[colorIdx % COLORS.length]; colorIdx++; return c; };
 const roomUsers = room => {
-  const list = [];
-  users.forEach(u => { if (u.room === room) list.push({ username: u.username, color: u.color }); });
-  return list;
+    const list = [];
+    users.forEach(u => { if (u.room === room) list.push({ username: u.username, color: u.color }); });
+    return list;
+};
+
+/* ── Change 1: Unique username check per room ───── */
+const isNameTaken = (username, room) => {
+    const lower = username.toLowerCase();
+    for (const u of users.values()) {
+          if (u.room === room && u.username.toLowerCase() === lower) return true;
+    }
+    return false;
 };
 
 /* ── Rate Limiting ──────────────────────────────── */
-const MSG_LIMIT   = 10;   // max messages
-const MSG_WINDOW  = 5000; // per 5 seconds (ms)
+const MSG_LIMIT  = 10;    // max messages
+const MSG_WINDOW = 5000;  // per 5 seconds (ms)
 const rateLimiter = new Map(); // socket.id -> { count, windowStart }
 
 const isRateLimited = (socketId) => {
-  const now   = Date.now();
-  const entry = rateLimiter.get(socketId) || { count: 0, windowStart: now };
-  if (now - entry.windowStart > MSG_WINDOW) {
-    entry.count       = 1;
-    entry.windowStart = now;
-  } else {
-    entry.count++;
-  }
-  rateLimiter.set(socketId, entry);
-  return entry.count > MSG_LIMIT;
+    const now   = Date.now();
+    const entry = rateLimiter.get(socketId) || { count: 0, windowStart: now };
+    if (now - entry.windowStart > MSG_WINDOW) {
+          entry.count = 1;
+          entry.windowStart = now;
+    } else {
+          entry.count++;
+    }
+    rateLimiter.set(socketId, entry);
+    return entry.count > MSG_LIMIT;
 };
 
 /* ── Socket.io Events ───────────────────────────── */
 io.on('connection', socket => {
-  console.log('[+] connected: ' + socket.id);
+    console.log('[+] connected: ' + socket.id);
 
-  /* 1 - Join a room */
-  socket.on('join', ({ username, room }) => {
-    if (!username || !username.trim()) return;
-    if (!ROOMS.includes(room)) room = 'General';
-    username = username.trim().slice(0, 24);
+        /* 1 - Join a room */
+        socket.on('join', ({ username, room }) => {
+              if (!username || !username.trim()) return;
+              if (!ROOMS.includes(room)) room = 'General';
+              username = username.trim().slice(0, 24);
 
-    const user = { username, room, color: nextColor() };
-    users.set(socket.id, user);
-    socket.join(room);
+                      /* Change 1: reject if username is already taken in that room */
+                      if (isNameTaken(username, room)) {
+                              socket.emit('joinError', {
+                                        message: `"${username}" is already taken in #${room}. Please choose a different name.`
+                              });
+                              return;
+                      }
 
-    socket.emit('joined', { username, room, color: user.color, rooms: ROOMS });
-    socket.to(room).emit('sys', { type: 'joined', text: username + ' joined the room' });
-    io.to(room).emit('users', roomUsers(room));
-    console.log(' -> ' + username + ' joined [' + room + ']');
-  });
+                      const user = { username, room, color: nextColor() };
+              users.set(socket.id, user);
+              socket.join(room);
 
-  /* 2 - Chat message */
-  socket.on('msg', text => {
-    const user = users.get(socket.id);
-    if (!user) return;
+                      socket.emit('joined', { username, room, color: user.color, rooms: ROOMS });
+              socket.to(room).emit('sys', { type: 'joined', text: username + ' joined the room' });
+              io.to(room).emit('users', roomUsers(room));
+              console.log(' -> ' + username + ' joined [' + room + ']');
+        });
 
-    if (isRateLimited(socket.id)) {
-      socket.emit('error', { message: 'Slow down! You are sending messages too fast.' });
-      return;
-    }
+        /* 2 - Chat message */
+        socket.on('msg', text => {
+              const user = users.get(socket.id);
+              if (!user) return;
 
-    const clean = String(text).trim().slice(0, 1000);
-    if (!clean) return;
-    io.to(user.room).emit('msg', {
-      username : user.username,
-      color    : user.color,
-      text     : clean,
-      time     : new Date().toISOString()
-    });
-  });
+                      if (isRateLimited(socket.id)) {
+                              socket.emit('error', { message: 'Slow down! You are sending messages too fast.' });
+                              return;
+                      }
 
-  /* 3 - Typing indicator */
-  socket.on('typing', isTyping => {
-    const user = users.get(socket.id);
-    if (user) socket.to(user.room).emit('typing', { username: user.username, isTyping });
-  });
+                      const clean = String(text).trim().slice(0, 1000);
+              if (!clean) return;
+              io.to(user.room).emit('msg', {
+                      username : user.username,
+                      color    : user.color,
+                      text     : clean,
+                      time     : new Date().toISOString()
+              });
+        });
 
-  /* 4 - Switch room */
-  socket.on('switchRoom', newRoom => {
-    const user = users.get(socket.id);
-    if (!user || !ROOMS.includes(newRoom) || newRoom === user.room) return;
+        /* 3 - Typing indicator */
+        socket.on('typing', isTyping => {
+              const user = users.get(socket.id);
+              if (user) socket.to(user.room).emit('typing', { username: user.username, isTyping });
+        });
 
-    const old = user.room;
-    socket.leave(old);
-    socket.to(old).emit('sys', { type: 'left', text: user.username + ' left' });
-    io.to(old).emit('users', roomUsers(old));
+        /* 4 - Switch room */
+        socket.on('switchRoom', newRoom => {
+              const user = users.get(socket.id);
+              if (!user || !ROOMS.includes(newRoom) || newRoom === user.room) return;
 
-    user.room = newRoom;
-    users.set(socket.id, user);
-    socket.join(newRoom);
-    socket.to(newRoom).emit('sys', { type: 'joined', text: user.username + ' joined' });
-    io.to(newRoom).emit('users', roomUsers(newRoom));
-    socket.emit('switched', { room: newRoom });
-  });
+                      /* Change 1: check uniqueness in the new room too */
+                      if (isNameTaken(user.username, newRoom)) {
+                              socket.emit('joinError', {
+                                        message: `"${user.username}" is already taken in #${newRoom}. You cannot switch to that room.`
+                              });
+                              return;
+                      }
 
-  /* 5 - Disconnect */
-  socket.on('disconnect', () => {
-    const user = users.get(socket.id);
-    if (user) {
-      socket.to(user.room).emit('sys', { type: 'left', text: user.username + ' left the chat' });
-      users.delete(socket.id);
-      rateLimiter.delete(socket.id);
-      io.to(user.room).emit('users', roomUsers(user.room));
-      console.log('[-] ' + user.username + ' disconnected');
-    }
-  });
+                      const old = user.room;
+              socket.leave(old);
+              socket.to(old).emit('sys', { type: 'left', text: user.username + ' left' });
+              io.to(old).emit('users', roomUsers(old));
+
+                      user.room = newRoom;
+              users.set(socket.id, user);
+              socket.join(newRoom);
+              socket.to(newRoom).emit('sys', { type: 'joined', text: user.username + ' joined' });
+              io.to(newRoom).emit('users', roomUsers(newRoom));
+              socket.emit('switched', { room: newRoom });
+        });
+
+        /* 5 - Disconnect */
+        socket.on('disconnect', () => {
+              const user = users.get(socket.id);
+              if (user) {
+                      socket.to(user.room).emit('sys', { type: 'left', text: user.username + ' left the chat' });
+                      users.delete(socket.id);
+                      rateLimiter.delete(socket.id);
+                      io.to(user.room).emit('users', roomUsers(user.room));
+                      console.log('[-] ' + user.username + ' disconnected');
+              }
+        });
 });
 
 /* ── Start ──────────────────────────────────────── */
 server.listen(PORT, () => {
-  console.log('Pulse Chat running at http://localhost:' + PORT);
+    console.log('Pulse Chat running at http://localhost:' + PORT);
 });
